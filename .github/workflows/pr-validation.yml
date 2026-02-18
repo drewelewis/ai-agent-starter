@@ -1,0 +1,143 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  validate:
+    name: Validate Pull Request
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Check PR title
+      uses: amannn/action-semantic-pull-request@v5
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        types: |
+          feat
+          fix
+          docs
+          style
+          refactor
+          perf
+          test
+          build
+          ci
+          chore
+        requireScope: false
+
+    - name: Check file changes
+      id: changes
+      uses: dorny/paths-filter@v3
+      with:
+        filters: |
+          agents:
+            - 'agents/**'
+          orchestrators:
+            - 'orchestrators/**'
+          api:
+            - 'api/**'
+          docs:
+            - 'docs/**'
+            - '*.md'
+          tests:
+            - 'tests/**'
+          workflows:
+            - '.github/workflows/**'
+
+    - name: Comment on PR
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const changes = ${{ toJSON(steps.changes.outputs) }}
+          const changedAreas = Object.keys(changes).filter(k => changes[k] === 'true')
+          
+          const comment = `## 🔍 PR Validation
+          
+          **Changed areas:** ${changedAreas.join(', ') || 'None'}
+          
+          **Next steps:**
+          - [ ] Review code changes
+          - [ ] Run tests locally
+          - [ ] Update documentation if needed
+          - [ ] Verify CI passes
+          
+          *Automated by PR Validation workflow*`
+          
+          github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body: comment
+          })
+
+  size-check:
+    name: Check PR Size
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check PR size
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { data: files } = await github.rest.pulls.listFiles({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.issue.number
+          })
+          
+          const changes = files.reduce((sum, file) => sum + file.changes, 0)
+          const additions = files.reduce((sum, file) => sum + file.additions, 0)
+          const deletions = files.reduce((sum, file) => sum + file.deletions, 0)
+          
+          let label = 'size/S'
+          if (changes > 1000) label = 'size/XXL'
+          else if (changes > 500) label = 'size/XL'
+          else if (changes > 200) label = 'size/L'
+          else if (changes > 50) label = 'size/M'
+          
+          await github.rest.issues.addLabels({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            labels: [label]
+          })
+          
+          if (changes > 500) {
+            const comment = `⚠️ **Large PR Warning**
+            
+            This PR has ${changes} changed lines (${additions} additions, ${deletions} deletions).
+            
+            Consider breaking it into smaller PRs for easier review.`
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: comment
+            })
+          }
+
+  conflict-check:
+    name: Check for Conflicts
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check for merge conflicts
+      uses: prince-chrismc/check-merge-conflict-action@v1
+      with:
+        only-check-mergeable: true

@@ -1,0 +1,294 @@
+name: Infrastructure - Deploy to Azure
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - deploy
+          - destroy
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/**'
+
+env:
+  AZURE_LOCATION: eastus
+  BICEP_FILE: infra/main.bicep
+
+jobs:
+  validate:
+    name: Validate Infrastructure
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Log in to Azure
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Validate Bicep template
+      run: |
+        az bicep build --file ${{ env.BICEP_FILE }}
+        echo "✅ Bicep template is valid"
+
+    - name: Run what-if deployment
+      run: |
+        ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+        RESOURCE_GROUP="ai-agent-starter-${ENVIRONMENT}-rg"
+        
+        az deployment group what-if \
+          --resource-group $RESOURCE_GROUP \
+          --template-file ${{ env.BICEP_FILE }} \
+          --parameters environment=$ENVIRONMENT \
+          --parameters location=${{ env.AZURE_LOCATION }}
+
+  deploy:
+    name: Deploy Infrastructure
+    runs-on: ubuntu-latest
+    needs: validate
+    if: github.event.inputs.action != 'destroy'
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Log in to Azure
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Set environment variables
+      id: env
+      run: |
+        ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+        echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
+        echo "resource_group=ai-agent-starter-${ENVIRONMENT}-rg" >> $GITHUB_OUTPUT
+        echo "deployment_name=infra-deploy-$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
+
+    - name: Create resource group
+      run: |
+        az group create \
+          --name ${{ steps.env.outputs.resource_group }} \
+          --location ${{ env.AZURE_LOCATION }} \
+          --tags \
+            Environment=${{ steps.env.outputs.environment }} \
+            Project=ai-agent-starter \
+            ManagedBy=GitHub-Actions
+
+    - name: Deploy infrastructure
+      id: deploy
+      run: |
+        az deployment group create \
+          --name ${{ steps.env.outputs.deployment_name }} \
+          --resource-group ${{ steps.env.outputs.resource_group }} \
+          --template-file ${{ env.BICEP_FILE }} \
+          --parameters environment=${{ steps.env.outputs.environment }} \
+          --parameters location=${{ env.AZURE_LOCATION }} \
+          --parameters azureProjectEndpoint="${{ secrets.AZURE_PROJECT_ENDPOINT }}" \
+          --parameters modelDeploymentName="${{ secrets.MODEL_DEPLOYMENT_NAME }}" \
+          --output json > deployment-output.json
+        
+        # Extract outputs
+        CONTAINER_APP_URL=$(jq -r '.properties.outputs.containerAppUrl.value' deployment-output.json)
+        CONTAINER_REGISTRY=$(jq -r '.properties.outputs.containerRegistryName.value' deployment-output.json)
+        
+        echo "container_app_url=$CONTAINER_APP_URL" >> $GITHUB_OUTPUT
+        echo "container_registry=$CONTAINER_REGISTRY" >> $GITHUB_OUTPUT
+        
+        echo "## 🚀 Infrastructure Deployed" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Environment:** ${{ steps.env.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Resource Group:** ${{ steps.env.outputs.resource_group }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Container App URL:** $CONTAINER_APP_URL" >> $GITHUB_STEP_SUMMARY
+        echo "**Container Registry:** $CONTAINER_REGISTRY" >> $GITHUB_STEP_SUMMARY
+
+    - name: Configure managed identity
+      run: |
+        # Get the container app managed identity
+        IDENTITY_ID=$(az containerapp show \
+          --name ai-agent-starter-${{ steps.env.outputs.environment }} \
+          --resource-group ${{ steps.env.outputs.resource_group }} \
+          --query identity.principalId \
+          --output tsv)
+        
+        echo "Container App Identity: $IDENTITY_ID"
+        
+        # Grant permissions to Azure AI services if needed
+        # az role assignment create \
+        #   --assignee $IDENTITY_ID \
+        #   --role "Cognitive Services User" \
+        #   --scope /subscriptions/{subscription-id}/resourceGroups/{ai-resource-group}
+
+    - name: Verify deployment
+      run: |
+        CONTAINER_APP_URL="${{ steps.deploy.outputs.container_app_url }}"
+        
+        echo "Waiting for container app to be ready..."
+        sleep 60
+        
+        # Test health endpoint
+        if curl -f -s "$CONTAINER_APP_URL/health" > /dev/null; then
+          echo "✅ Health check passed"
+        else
+          echo "⚠️ Health check failed (may need initial deployment)"
+        fi
+
+    - name: Output deployment info
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const environment = '${{ steps.env.outputs.environment }}'
+          const url = '${{ steps.deploy.outputs.container_app_url }}'
+          const registry = '${{ steps.deploy.outputs.container_registry }}'
+          
+          const comment = `## 🏗️ Infrastructure Deployment Complete
+          
+          **Environment:** ${environment}
+          **Status:** ✅ Deployed
+          
+          ### Resources Created
+          - **Container App URL:** ${url}
+          - **Container Registry:** ${registry}.azurecr.io
+          - **Resource Group:** ${{ steps.env.outputs.resource_group }}
+          
+          ### Next Steps
+          1. Deploy application: Run \`CD - Deploy to Azure Container Apps\` workflow
+          2. Access API: ${url}/docs
+          3. Health check: ${url}/health
+          
+          ### Outputs for GitHub Secrets
+          \`\`\`bash
+          AZURE_CONTAINER_REGISTRY=${registry}
+          AZURE_RESOURCE_GROUP=${{ steps.env.outputs.resource_group }}
+          AZURE_CONTAINER_APP_NAME=ai-agent-starter-${environment}
+          \`\`\`
+          `
+          
+          github.rest.repos.createCommitComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            commit_sha: context.sha,
+            body: comment
+          })
+
+    - name: Upload deployment outputs
+      uses: actions/upload-artifact@v4
+      with:
+        name: deployment-outputs-${{ steps.env.outputs.environment }}
+        path: deployment-output.json
+
+  destroy:
+    name: Destroy Infrastructure
+    runs-on: ubuntu-latest
+    if: github.event.inputs.action == 'destroy'
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Log in to Azure
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Confirm destruction
+      run: |
+        echo "⚠️ WARNING: This will delete all resources in the environment"
+        echo "Environment: ${{ github.event.inputs.environment }}"
+        echo "Resource Group: ai-agent-starter-${{ github.event.inputs.environment }}-rg"
+
+    - name: Delete resource group
+      run: |
+        RESOURCE_GROUP="ai-agent-starter-${{ github.event.inputs.environment }}-rg"
+        
+        if az group exists --name $RESOURCE_GROUP | grep -q "true"; then
+          echo "Deleting resource group: $RESOURCE_GROUP"
+          az group delete \
+            --name $RESOURCE_GROUP \
+            --yes \
+            --no-wait
+          echo "🗑️ Resource group deletion initiated"
+        else
+          echo "Resource group does not exist: $RESOURCE_GROUP"
+        fi
+
+    - name: Notify destruction
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const environment = '${{ github.event.inputs.environment }}'
+          
+          github.rest.repos.createCommitComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            commit_sha: context.sha,
+            body: `## 🗑️ Infrastructure Destruction Initiated\n\n` +
+                  `**Environment:** ${environment}\n` +
+                  `**Status:** Deletion in progress\n\n` +
+                  `All resources in \`ai-agent-starter-${environment}-rg\` are being deleted.`
+          })
+
+  cost-estimate:
+    name: Estimate Costs
+    runs-on: ubuntu-latest
+    needs: validate
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Estimate monthly costs
+      run: |
+        ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+        
+        cat << EOF > cost-estimate.md
+        ## 💰 Estimated Monthly Costs - $ENVIRONMENT
+        
+        ### Azure Container Apps
+        - vCPU: 1.0 @ \$0.000024/vCPU-second = ~\$62/month
+        - Memory: 2.0 GB @ \$0.000003/GB-second = ~\$16/month
+        - Requests: 1M @ \$0.40/million = \$0.40/month
+        **Subtotal: ~\$78/month**
+        
+        ### Azure Container Registry
+        - Basic tier: \$5/month
+        - Storage: ~\$0.10/GB/month
+        **Subtotal: ~\$6/month**
+        
+        ### Azure AI Services
+        - GPT-4 usage: Variable (depends on usage)
+        - Estimated: \$50-200/month
+        
+        ### Total Estimated Cost
+        - **Development:** \$84-134/month
+        - **Staging:** \$100-150/month
+        - **Production:** \$200-400/month (with scaling)
+        
+        _Costs may vary based on actual usage and Azure pricing._
+        EOF
+        
+        cat cost-estimate.md >> $GITHUB_STEP_SUMMARY
+
+    - name: Upload cost estimate
+      uses: actions/upload-artifact@v4
+      with:
+        name: cost-estimate
+        path: cost-estimate.md
