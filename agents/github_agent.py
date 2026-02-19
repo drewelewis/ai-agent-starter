@@ -22,30 +22,16 @@ from tools.github_tool import (
 load_dotenv(override=True)
 
 
-async def create_github_agent() -> ChatAgent:
+def create_github_agent(client: AzureAIClient) -> ChatAgent:
     """
     Create and configure the GitHub Agent with tools.
+    
+    Args:
+        client: AzureAIClient instance for model inference
     
     Returns:
         Configured ChatAgent instance
     """
-    # Get configuration from environment
-    project_endpoint = os.getenv('AZURE_PROJECT_ENDPOINT')
-    model_deployment_name = os.getenv('MODEL_DEPLOYMENT_NAME', 'gpt-4.1')
-    
-    if not project_endpoint:
-        raise ValueError("AZURE_PROJECT_ENDPOINT environment variable is not set")
-    
-    # Create credential
-    credential = DefaultAzureCredential()
-    
-    # Create Azure AI client
-    client = AzureAIClient(
-        project_endpoint=project_endpoint,
-        model_deployment_name=model_deployment_name,
-        credential=credential
-    )
-    
     # Define agent instructions
     instructions = """You are a specialized GitHub Assistant Agent. You are an expert in:
 - Repository management and navigation
@@ -82,8 +68,9 @@ async def create_github_agent() -> ChatAgent:
 
 Always think step by step when analyzing repositories and provide clear, actionable insights."""
     
-    # Create agent with tools
-    agent = client.create_agent(
+    # Create local agent with tools
+    agent = ChatAgent(
+        client=client,
         name="GitHubAgent",
         instructions=instructions,
         tools=[
@@ -104,44 +91,53 @@ async def main():
     """
     print("\n" + "="*60)
     print("GitHub Assistant Agent - Microsoft Agent Framework")
-    print("="*60 + "\n")
+ print("="*60 + "\n")
     
-    # Create the agent
-    async with (
-        DefaultAzureCredential() as credential,
-        await create_github_agent() as agent
-    ):
-        print("✅ GitHub Agent initialized successfully!")
-        print("💬 Type your questions (or 'quit' to exit)\n")
-        
-        # Create a thread for multi-turn conversation
-        thread = agent.get_new_thread()
-        
-        # Interactive chat loop
-        while True:
-            try:
-                user_input = input("You: ")
-                print()
-                
-                if user_input.lower() in ['quit', 'exit', 'q']:
-                    print("Goodbye!")
-                    break
-                
-                if not user_input.strip():
-                    continue
-                
-                # Stream the response
-                print("Agent: ", end="", flush=True)
-                async for chunk in agent.run_stream(user_input, thread=thread):
-                    if chunk.text:
-                        print(chunk.text, end="", flush=True)
-                print("\n")
-                
-            except KeyboardInterrupt:
-                print("\n\nGoodbye!")
+    # Get configuration from environment
+    project_endpoint = os.getenv('AZURE_PROJECT_ENDPOINT')
+    model_deployment_name = os.getenv('MODEL_DEPLOYMENT_NAME', 'gpt-4.1')
+    
+    if not project_endpoint:
+        raise ValueError("AZURE_PROJECT_ENDPOINT environment variable is not set")
+    
+    # Create credential and client
+    credential = DefaultAzureCredential()
+    client = AzureAIClient(
+        project_endpoint=project_endpoint,
+        model_deployment_name=model_deployment_name,
+        credential=credential
+    )
+    
+    # Create the local agent
+    agent = create_github_agent(client)
+    
+    print("✅ GitHub Agent initialized successfully!")
+    print("💬 Type your questions (or 'quit' to exit)\n")
+    
+    # Interactive chat loop
+    while True:
+        try:
+            user_input = input("You: ")
+            print()
+            
+            if user_input.lower() in ['quit', 'exit', 'q']:
+                print("Goodbye!")
                 break
-            except Exception as e:
-                print(f"❌ Error: {e}\n")
+            
+            if not user_input.strip():
+                continue
+            
+            # Get response from agent
+            print("Agent: ", end="", flush=True)
+            response = await agent.run(user_input)
+            print(response)
+            print("\n")
+            
+        except KeyboardInterrupt:
+            print("\n\nGoodbye!")
+            break
+        except Exception as e:
+            print(f"❌ Error: {e}\n")
 
 
 if __name__ == "__main__":

@@ -63,45 +63,35 @@ class LLMOrchestrator:
     def __init__(self):
         """Initialize the LLM-based orchestrator"""
         self.agents: Dict[str, any] = {}
-        self.threads: Dict[str, any] = {}
         self.current_agent_name: Optional[str] = None
         self._initialized = False
-        self.ai_client = None
-        self.routing_agent = None
+        self.client: Optional[AzureAIClient] = None
         
     async def initialize(self):
-        """Initialize all specialized agents and routing agent"""
+        """Initialize all specialized agents and routing logic"""
         if self._initialized:
             return
-            
+        
         # Get configuration from environment
-        project_endpoint = os.environ["AZURE_PROJECT_ENDPOINT"]
-        model_deployment = os.environ["MODEL_DEPLOYMENT_NAME"]
+        project_endpoint = os.getenv('AZURE_PROJECT_ENDPOINT')
+        model_deployment_name = os.getenv('MODEL_DEPLOYMENT_NAME', 'gpt-4.1')
+        
+        if not project_endpoint:
+            raise ValueError("AZURE_PROJECT_ENDPOINT environment variable is not set")
         
         # Create Azure AI client
         credential = DefaultAzureCredential()
-        self.ai_client = AzureAIClient.from_endpoint(
-            endpoint=project_endpoint,
+        self.client = AzureAIClient(
+            project_endpoint=project_endpoint,
+            model_deployment_name=model_deployment_name,
             credential=credential
         )
         
-        # Create routing agent (simple agent for making routing decisions)
-        from agent_framework import ChatAgent
-        self.routing_agent = self.ai_client.create_agent(
-            ChatAgent,
-            model=model_deployment,
-            name="Routing Agent",
-            instructions="You are a routing assistant. Respond with only one word: github, math, or none",
-            temperature=0.1  # Low temperature for consistent routing
-        )
-        
         # Initialize GitHub Agent
-        self.agents['github'] = await create_github_agent()
-        self.threads['github'] = self.agents['github'].get_new_thread()
+        self.agents['github'] = create_github_agent(self.client)
         
         # Initialize Math Agent
-        self.agents['math'] = await create_math_agent()
-        self.threads['math'] = self.agents['math'].get_new_thread()
+        self.agents['math'] = create_math_agent(self.client)
         
         self._initialized = True
         print(f"Initialized {len(self.agents)} specialized agent(s) with LLM routing")

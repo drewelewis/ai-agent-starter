@@ -41,8 +41,11 @@ EXAMPLE RULES:
 - Simple "github" → GitHub (Priority 10)
 """
 
+import os
 import re
 from typing import Optional, Dict, List, Callable
+from azure.identity.aio import DefaultAzureCredential
+from agent_framework.azure import AzureAIClient
 
 from agents.github_agent import create_github_agent
 from agents.math_agent import create_math_agent
@@ -64,23 +67,36 @@ class RuleBasedOrchestrator:
     def __init__(self):
         """Initialize the rule-based orchestrator"""
         self.agents: Dict[str, any] = {}
-        self.threads: Dict[str, any] = {}
         self.current_agent_name: Optional[str] = None
         self.routing_rules: List[RoutingRule] = []
         self._initialized = False
+        self.client: Optional[AzureAIClient] = None
         
     async def initialize(self):
         """Initialize all specialized agents"""
         if self._initialized:
             return
+        
+        # Get configuration from environment
+        project_endpoint = os.getenv('AZURE_PROJECT_ENDPOINT')
+        model_deployment_name = os.getenv('MODEL_DEPLOYMENT_NAME', 'gpt-4.1')
+        
+        if not project_endpoint:
+            raise ValueError("AZURE_PROJECT_ENDPOINT environment variable is not set")
+        
+        # Create Azure AI client
+        credential = DefaultAzureCredential()
+        self.client = AzureAIClient(
+            project_endpoint=project_endpoint,
+            model_deployment_name=model_deployment_name,
+            credential=credential
+        )
             
         # Initialize GitHub Agent
-        self.agents['github'] = await create_github_agent()
-        self.threads['github'] = self.agents['github'].get_new_thread()
+        self.agents['github'] = create_github_agent(self.client)
         
         # Initialize Math Agent
-        self.agents['math'] = await create_math_agent()
-        self.threads['math'] = self.agents['math'].get_new_thread()
+        self.agents['math'] = create_math_agent(self.client)
         
         # Setup routing rules after agents are initialized
         self.setup_rules()
