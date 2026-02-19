@@ -76,13 +76,18 @@ class KeywordOrchestrator:
         )
             
         # Initialize GitHub Agent
-        self.agents['github'] = create_github_agent(self.client)
+        github_agent = create_github_agent(self.client)
+        self.agents['github'] = github_agent
+        print(f"[DEBUG] Created GitHub agent: {github_agent}, name: {getattr(github_agent, 'name', 'N/A')}")
         
         # Initialize Math Agent
-        self.agents['math'] = create_math_agent(self.client)
+        math_agent = create_math_agent(self.client)
+        self.agents['math'] = math_agent
+        print(f"[DEBUG] Created Math agent: {math_agent}, name: {getattr(math_agent, 'name', 'N/A')}")
         
         self._initialized = True
         print(f"Initialized {len(self.agents)} specialized agent(s)")
+        print(f"[DEBUG] Agent keys: {list(self.agents.keys())}")
     
     def get_agent_keywords(self) -> Dict[str, list]:
         """Return keyword mappings for agent routing"""
@@ -162,6 +167,7 @@ class KeywordOrchestrator:
         
         # Get agent
         agent = self.agents[selected_agent_name]
+        print(f"[DEBUG] Retrieved agent for '{selected_agent_name}': {agent}, name: {getattr(agent, 'name', 'N/A')}")
         
         # Get response from agent
         response = await agent.run(user_input)
