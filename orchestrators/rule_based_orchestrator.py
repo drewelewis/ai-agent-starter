@@ -233,7 +233,10 @@ class RuleBasedOrchestrator:
         agent = self.agents[selected_agent_name]
         
         # Get response from agent
-        response_text = await agent.run(user_input)
+        response = await agent.run(user_input)
+        
+        # Convert AgentRunResponse to string
+        response_text = str(response) if hasattr(response, '__str__') else response
         
         return response_text, agent_switch_info
     
