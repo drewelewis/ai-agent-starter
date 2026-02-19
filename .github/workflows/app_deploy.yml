@@ -1,4 +1,4 @@
-name: Deploy Application
+name: App Deploy (All-in-One)
 
 on:
   push:
