@@ -53,7 +53,6 @@ class KeywordOrchestrator:
         self.agents: Dict[str, any] = {}
         self.current_agent_name: Optional[str] = None
         self._initialized = False
-        self.client: Optional[AzureAIClient] = None
         
     async def initialize(self):
         """Initialize all specialized agents"""
@@ -67,21 +66,26 @@ class KeywordOrchestrator:
         if not project_endpoint:
             raise ValueError("AZURE_PROJECT_ENDPOINT environment variable is not set")
         
-        # Create Azure AI client
+        # Create separate Azure AI client for each agent to ensure isolation
         credential = DefaultAzureCredential()
-        self.client = AzureAIClient(
+        
+        # Initialize GitHub Agent with its own client
+        github_client = AzureAIClient(
             project_endpoint=project_endpoint,
             model_deployment_name=model_deployment_name,
             credential=credential
         )
-            
-        # Initialize GitHub Agent
-        github_agent = create_github_agent(self.client)
+        github_agent = create_github_agent(github_client)
         self.agents['github'] = github_agent
         print(f"[DEBUG] Created GitHub agent: {github_agent}, name: {getattr(github_agent, 'name', 'N/A')}")
         
-        # Initialize Math Agent
-        math_agent = create_math_agent(self.client)
+        # Initialize Math Agent with its own client
+        math_client = AzureAIClient(
+            project_endpoint=project_endpoint,
+            model_deployment_name=model_deployment_name,
+            credential=credential
+        )
+        math_agent = create_math_agent(math_client)
         self.agents['math'] = math_agent
         print(f"[DEBUG] Created Math agent: {math_agent}, name: {getattr(math_agent, 'name', 'N/A')}")
         

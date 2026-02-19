@@ -65,7 +65,6 @@ class LLMOrchestrator:
         self.agents: Dict[str, any] = {}
         self.current_agent_name: Optional[str] = None
         self._initialized = False
-        self.client: Optional[AzureAIClient] = None
         
     async def initialize(self):
         """Initialize all specialized agents and routing logic"""
@@ -79,19 +78,24 @@ class LLMOrchestrator:
         if not project_endpoint:
             raise ValueError("AZURE_PROJECT_ENDPOINT environment variable is not set")
         
-        # Create Azure AI client
+        # Create separate Azure AI client for each agent to ensure isolation
         credential = DefaultAzureCredential()
-        self.client = AzureAIClient(
+        
+        # Initialize GitHub Agent with its own client
+        github_client = AzureAIClient(
             project_endpoint=project_endpoint,
             model_deployment_name=model_deployment_name,
             credential=credential
         )
+        self.agents['github'] = create_github_agent(github_client)
         
-        # Initialize GitHub Agent
-        self.agents['github'] = create_github_agent(self.client)
-        
-        # Initialize Math Agent
-        self.agents['math'] = create_math_agent(self.client)
+        # Initialize Math Agent with its own client
+        math_client = AzureAIClient(
+            project_endpoint=project_endpoint,
+            model_deployment_name=model_deployment_name,
+            credential=credential
+        )
+        self.agents['math'] = create_math_agent(math_client)
         
         self._initialized = True
         print(f"Initialized {len(self.agents)} specialized agent(s) with LLM routing")

@@ -70,7 +70,6 @@ class RuleBasedOrchestrator:
         self.current_agent_name: Optional[str] = None
         self.routing_rules: List[RoutingRule] = []
         self._initialized = False
-        self.client: Optional[AzureAIClient] = None
         
     async def initialize(self):
         """Initialize all specialized agents"""
@@ -84,19 +83,24 @@ class RuleBasedOrchestrator:
         if not project_endpoint:
             raise ValueError("AZURE_PROJECT_ENDPOINT environment variable is not set")
         
-        # Create Azure AI client
+        # Create separate Azure AI client for each agent to ensure isolation
         credential = DefaultAzureCredential()
-        self.client = AzureAIClient(
+        
+        # Initialize GitHub Agent with its own client
+        github_client = AzureAIClient(
             project_endpoint=project_endpoint,
             model_deployment_name=model_deployment_name,
             credential=credential
         )
-            
-        # Initialize GitHub Agent
-        self.agents['github'] = create_github_agent(self.client)
+        self.agents['github'] = create_github_agent(github_client)
         
-        # Initialize Math Agent
-        self.agents['math'] = create_math_agent(self.client)
+        # Initialize Math Agent with its own client
+        math_client = AzureAIClient(
+            project_endpoint=project_endpoint,
+            model_deployment_name=model_deployment_name,
+            credential=credential
+        )
+        self.agents['math'] = create_math_agent(math_client)
         
         # Setup routing rules after agents are initialized
         self.setup_rules()
