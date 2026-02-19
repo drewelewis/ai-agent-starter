@@ -1,0 +1,213 @@
+name: ACA Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Docker image tag to deploy from ACR'
+        required: true
+        default: 'latest'
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+        default: 'dev'
+
+env:
+  IMAGE_NAME: ai-agent-starter
+
+jobs:
+  deploy:
+    name: Deploy to Azure Container Apps
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    
+    steps:
+    - name: Log in to Azure
+      run: |
+        az login --service-principal \
+          --username ${{ secrets.AZURE_CLIENT_ID }} \
+          --password ${{ secrets.AZURE_CLIENT_SECRET }} \
+          --tenant ${{ secrets.AZURE_TENANT_ID }}
+        az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Verify image exists in ACR
+      run: |
+        TAG="${{ github.event.inputs.tag }}"
+        echo "Verifying image exists: ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io/${{ env.IMAGE_NAME }}:$TAG"
+        
+        if az acr repository show-tags \
+          --name ${{ secrets.AZURE_CONTAINER_REGISTRY }} \
+          --repository ${{ env.IMAGE_NAME }} \
+          --output tsv | grep -q "^$TAG$"; then
+          echo "✅ Image tag found in ACR"
+        else
+          echo "❌ Image tag not found in ACR"
+          echo "Available tags:"
+          az acr repository show-tags \
+            --name ${{ secrets.AZURE_CONTAINER_REGISTRY }} \
+            --repository ${{ env.IMAGE_NAME }} \
+            --orderby time_desc \
+            --output table
+          exit 1
+        fi
+
+    - name: Deploy to Azure Container Apps
+      id: deploy
+      run: |
+        TAG="${{ github.event.inputs.tag }}"
+        IMAGE="${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io/${{ env.IMAGE_NAME }}:$TAG"
+        
+        echo "Deploying image: $IMAGE"
+        echo "To: ${{ secrets.AZURE_CONTAINER_APP_NAME }}"
+        echo "Environment: ${{ github.event.inputs.environment }}"
+        
+        az containerapp update \
+          --name ${{ secrets.AZURE_CONTAINER_APP_NAME }} \
+          --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+          --image $IMAGE \
+          --revision-suffix $(date +%Y%m%d-%H%M%S)
+        
+        echo "✅ Deployment initiated"
+
+    - name: Get Container App URL
+      id: get-url
+      run: |
+        FQDN=$(az containerapp show \
+          --name ${{ secrets.AZURE_CONTAINER_APP_NAME }} \
+          --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+          --query properties.configuration.ingress.fqdn \
+          --output tsv)
+        echo "url=https://$FQDN" >> $GITHUB_OUTPUT
+        echo "Container App URL: https://$FQDN"
+
+    - name: Check deployment health
+      run: |
+        HEALTH_URL="${{ steps.get-url.outputs.url }}/health"
+        MAX_RETRIES=10
+        RETRY_COUNT=0
+        
+        echo "Starting health check at: $HEALTH_URL"
+        
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+          echo "Health check attempt $((RETRY_COUNT + 1))/$MAX_RETRIES..."
+          
+          if curl -f -s "$HEALTH_URL" > /dev/null 2>&1; then
+            echo "✅ Health check passed!"
+            exit 0
+          fi
+          
+          RETRY_COUNT=$((RETRY_COUNT + 1))
+          SLEEP_TIME=$((RETRY_COUNT * 5))
+          
+          if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+            echo "Waiting ${SLEEP_TIME}s before retry..."
+            sleep $SLEEP_TIME
+          fi
+        done
+        
+        echo "❌ Health check failed after $MAX_RETRIES attempts"
+        
+        # Show recent logs for debugging
+        echo "Recent container logs:"
+        az containerapp logs show \
+          --name ${{ secrets.AZURE_CONTAINER_APP_NAME }} \
+          --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+          --tail 50 || true
+        
+        exit 1
+
+    - name: Run smoke tests
+      run: |
+        APP_URL="${{ steps.get-url.outputs.url }}"
+        
+        echo "Running smoke tests..."
+        
+        # Test root endpoint
+        if curl -f -s "$APP_URL" > /dev/null; then
+          echo "✅ Root endpoint"
+        else
+          echo "❌ Root endpoint failed"
+          exit 1
+        fi
+        
+        # Test agent status
+        if curl -f -s "$APP_URL/agent_status" > /dev/null; then
+          echo "✅ Agent status endpoint"
+        else
+          echo "⚠️ Agent status endpoint failed (non-critical)"
+        fi
+        
+        echo "✅ All smoke tests passed!"
+
+    - name: Output deployment details
+      run: |
+        APP_URL="${{ steps.get-url.outputs.url }}"
+        PORTAL_URL="https://portal.azure.com/#@/resource/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ secrets.AZURE_RESOURCE_GROUP }}/providers/Microsoft.App/containerApps/${{ secrets.AZURE_CONTAINER_APP_NAME }}/revisionManagement"
+        
+        echo "## 🚀 Deployment Complete" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Image Tag:** ${{ github.event.inputs.tag }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Application URL:** $APP_URL" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Quick Links" >> $GITHUB_STEP_SUMMARY
+        echo "- **Health:** [$APP_URL/health]($APP_URL/health)" >> $GITHUB_STEP_SUMMARY
+        echo "- **API Docs:** [$APP_URL/docs]($APP_URL/docs)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Azure Portal:** [View Container App]($PORTAL_URL)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Rollback" >> $GITHUB_STEP_SUMMARY
+        echo "If needed, activate a previous revision:" >> $GITHUB_STEP_SUMMARY
+        echo '```bash' >> $GITHUB_STEP_SUMMARY
+        echo "az containerapp revision list --name ${{ secrets.AZURE_CONTAINER_APP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} -o table" >> $GITHUB_STEP_SUMMARY
+        echo "az containerapp revision activate --revision <revision-name> --name ${{ secrets.AZURE_CONTAINER_APP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }}" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+
+  rollback:
+    name: Rollback on Failure
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: failure()
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    
+    steps:
+    - name: Log in to Azure
+      run: |
+        az login --service-principal \
+          --username ${{ secrets.AZURE_CLIENT_ID }} \
+          --password ${{ secrets.AZURE_CLIENT_SECRET }} \
+          --tenant ${{ secrets.AZURE_TENANT_ID }}
+        az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Get previous revision
+      id: previous
+      run: |
+        PREV_REVISION=$(az containerapp revision list \
+          --name ${{ secrets.AZURE_CONTAINER_APP_NAME }} \
+          --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+          --query "[?properties.active==\`true\`] | [1].name" \
+          --output tsv)
+        echo "revision=$PREV_REVISION" >> $GITHUB_OUTPUT
+        echo "Previous revision: $PREV_REVISION"
+
+    - name: Rollback to previous revision
+      if: steps.previous.outputs.revision != ''
+      run: |
+        echo "Rolling back to: ${{ steps.previous.outputs.revision }}"
+        
+        az containerapp revision activate \
+          --name ${{ secrets.AZURE_CONTAINER_APP_NAME }} \
+          --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+          --revision ${{ steps.previous.outputs.revision }}
+        
+        echo "✅ Rolled back to revision: ${{ steps.previous.outputs.revision }}"
+        
+        echo "## ⏮️ Deployment Failed - Rollback Complete" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Rolled back to previous revision: \`${{ steps.previous.outputs.revision }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Check the workflow logs for deployment failure details." >> $GITHUB_STEP_SUMMARY

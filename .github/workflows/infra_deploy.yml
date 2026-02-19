@@ -1,4 +1,4 @@
-name: Deploy Infrastructure
+name: Infrastructure Deploy
 
 on:
   workflow_dispatch:
@@ -159,6 +159,7 @@ jobs:
         fi
 
     - name: Output deployment info
+      continue-on-error: true
       uses: actions/github-script@v7
       with:
         script: |
@@ -242,6 +243,7 @@ jobs:
         fi
 
     - name: Notify destruction
+      continue-on-error: true
       uses: actions/github-script@v7
       with:
         script: |

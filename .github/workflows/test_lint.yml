@@ -1,4 +1,4 @@
-name: Build Application
+name: Test & Lint
 
 on:
   push:
