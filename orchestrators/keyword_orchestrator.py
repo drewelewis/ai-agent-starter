@@ -119,10 +119,15 @@ class KeywordOrchestrator:
         if re.search(r'what\s+is\s+\d+', user_lower):
             scores['math'] = scores.get('math', 0) + 3
         
+        # Debug output
+        print(f"[DEBUG] Routing scores for '{user_input}': {scores}")
+        
         # Return agent with highest score (if any matches)
         max_score = max(scores.values())
         if max_score > 0:
-            return max(scores, key=scores.get)
+            selected = max(scores, key=scores.get)
+            print(f"[DEBUG] Selected agent: {selected}")
+            return selected
         
         return None
     
