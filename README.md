@@ -1,16 +1,5 @@
-# AI Production Support Assistant
+# AI Agent Starter
 
-A sophisticated AI-powered assistant built with Azure OpenAI and available in two implementations: **Semantic Kernel** (recommended) and **LangGraph** (legacy). This intelligent agent streamlines production support workflows by combining conversational AI with powerful integrations to GitHub, Elasticsearch, and ServiceNow, enabling support staff and developers to quickly diagnose issues, search code repositories, analyze application logs, and manage support cases.
-
-## 🎯 Overview
-
-The AI Production Support Assistant serves as a conversational interface that can autonomously:
-- Search and analyze application logs stored in Elasticsearch
-- Browse GitHub repositories and examine source code
-- Create GitHub issues for tracking problems
-- Manage ServiceNow support cases
-- Provide intelligent assistance for production support scenarios
-- Maintain conversation context and memory across interactions
 
 ## �️ Architecture with User Proxy Pattern
 
@@ -180,184 +169,188 @@ orchestrator = RuleBasedOrchestrator()
 from orchestrators import LLMOrchestrator
 orchestrator = LLMOrchestrator()
 ```
-## ☁️ Azure AI Foundry Integration
 
-The project supports an alternative agent implementation using **Azure AI Foundry** hosted agents. This allows you to run agents in the cloud instead of locally with Semantic Kernel.
+## ☁️ Microsoft Agent Framework Architecture
 
-### Benefits of Foundry Agents
+The agents in this project are built using **Microsoft Agent Framework** and connect to AI models hosted in **Azure AI Foundry** projects. This provides a modern, scalable architecture for building AI agents.
 
-| Feature | Semantic Kernel (Local) | Azure AI Foundry (Cloud) |
-|---------|------------------------|--------------------------|
-| **Hosting** | Local Python process | Azure-hosted service |
-| **Tool Management** | Local plugins | Cloud-configured tools |
-| **Scaling** | Manual | Automatic |
-| **Model Updates** | Manual SDK updates | Managed by Azure |
-| **Development** | Full local control | Portal-based configuration |
+### Agent Implementation
 
-### Foundry Agent Structure
-
-Foundry agents mirror the Semantic Kernel agents with the same interface:
+All agents use Microsoft Agent Framework with Azure AI integration:
 
 ```
-foundry_agents/
+agents/
 ├── __init__.py
-├── foundry_base_agent.py      # Base class for Foundry agents
-└── foundry_elasticsearch_agent.py  # Elasticsearch agent (Foundry version)
+├── math_agent.py           # Math calculations agent
+└── github_agent.py         # GitHub operations agent
 ```
+
+### Azure AI Foundry Connection
+
+The agents connect to models deployed in your Azure AI Foundry project:
+
+| Component | Purpose |
+|-----------|---------|
+| **Microsoft Agent Framework** | SDK for building conversational AI agents |
+| **Azure AI Foundry** | Cloud platform hosting your AI models and projects |
+| **Azure AI Project** | Workspace containing model deployments and configurations |
+| **Model Deployment** | Your specific GPT model (e.g., gpt-4.1) in the project |
 
 ### Configuration
 
-Add the following to your `.env` file:
+Add your Azure AI Project details to `.env`:
 
 ```bash
-# Azure AI Foundry Configuration
-AZURE_AI_PROJECT_ENDPOINT=https://your-project.services.ai.azure.com/api/projects/your-project
-AZURE_AI_ELASTICSEARCH_AGENT_NAME=elasticsearch-agent
+# Azure AI Project Configuration
+AZURE_PROJECT_ENDPOINT=https://your-project.services.ai.azure.com/api/projects/your-project
+MODEL_DEPLOYMENT_NAME=gpt-4.1
 ```
 
 ### Requirements
 
-Install the Azure AI Projects SDK:
+The Microsoft Agent Framework dependencies are in `requirements.txt`:
 
 ```bash
-pip install --pre azure-ai-projects>=2.0.0b1
-pip install azure-identity
+azure-ai-projects>=2.0.0b1
+azure-identity
+agent-framework
 ```
 
-### Swapping Agent Implementations
+### Agent Structure
 
-Both agent types implement the same interface, making them interchangeable:
+Each agent uses Microsoft Agent Framework's `ChatAgent` class:
 
-**Using Semantic Kernel Agent (default):**
 ```python
-from agents import ElasticsearchAgent
-agent = ElasticsearchAgent()
+from agent_framework.azure import AzureAIClient
+from agent_framework import ChatAgent
+
+# Create client connecting to your AI Foundry project
+client = AzureAIClient(
+    project_endpoint=os.getenv('AZURE_PROJECT_ENDPOINT'),
+    model_deployment_name=os.getenv('MODEL_DEPLOYMENT_NAME'),
+    credential=DefaultAzureCredential()
+)
+
+# Create agent with tools and instructions
+agent = client.create_agent(
+    name="MathAgent",
+    instructions="You are a specialized math assistant...",
+    tools=[add, subtract, multiply, divide]
+)
 ```
 
-**Using Azure AI Foundry Agent:**
-```python
-from foundry_agents import FoundryElasticsearchAgent
-agent = FoundryElasticsearchAgent()
-```
+### Creating New Agents
 
-### Common Interface
-
-Both `BaseAgent` and `FoundryBaseAgent` implement these methods:
-
-| Method | Description |
-|--------|-------------|
-| `get_agent_name()` | Returns the display name for the agent |
-| `get_system_message()` | Returns the system prompt/instructions |
-| `get_domain_keywords()` | Returns keywords for routing decisions |
-| `initialize_agent()` | Initializes or resets the agent state |
-| `chat(user_input)` | Async method to process input and get response |
-| `add_system_message(msg)` | Adds a system message to context |
-| `clear_history()` | Clears the conversation history |
-
-### Using Foundry Agents in the Orchestrator
-
-To use Foundry agents with the multi-agent orchestrator, modify the imports in `orchestrators/keyword_orchestrator.py`:
+To create a new agent with Microsoft Agent Framework:
 
 ```python
-# Use Semantic Kernel agents (default)
-from agents import GitHubAgent, ElasticsearchAgent, ServiceNowAgent
+import os
+from azure.identity.aio import DefaultAzureCredential
+from agent_framework.azure import AzureAIClient
+from agent_framework import ChatAgent
 
-# OR use Foundry agents
-from foundry_agents import FoundryElasticsearchAgent as ElasticsearchAgent
-from agents import GitHubAgent, ServiceNowAgent  # Mix and match as needed
-```
-
-### Creating Additional Foundry Agents
-
-To create a new Foundry agent (e.g., GitHub), inherit from `FoundryBaseAgent`:
-
-```python
-from foundry_agents import FoundryBaseAgent, get_current_datetime
-
-class FoundryGitHubAgent(FoundryBaseAgent):
-    def __init__(self):
-        super().__init__(
-            agent_name_env_var="AZURE_AI_GITHUB_AGENT_NAME",
-            default_agent_name="github-agent"
-        )
+async def create_custom_agent() -> ChatAgent:
+    """Create a custom agent with specific tools and instructions."""
     
-    def get_agent_name(self) -> str:
-        return "GitHub Repository Agent (Foundry)"
+    # Get Azure AI Project configuration from environment
+    project_endpoint = os.getenv('AZURE_PROJECT_ENDPOINT')
+    model_deployment_name = os.getenv('MODEL_DEPLOYMENT_NAME', 'gpt-4.1')
     
-    def get_system_message(self) -> str:
-        return f"Today: {get_current_datetime()}\nYou are a GitHub expert..."
+    # Create Azure AI client with managed identity
+    credential = DefaultAzureCredential()
+    client = AzureAIClient(
+        project_endpoint=project_endpoint,
+        model_deployment_name=model_deployment_name,
+        credential=credential
+    )
     
-    def get_domain_keywords(self) -> list[str]:
-        return ["github", "repository", "code", "pull request", ...]
+    # Define agent instructions (system prompt)
+    instructions = """You are a helpful assistant specialized in...
+    - Skill 1
+    - Skill 2
+    - Skill 3
+    """
+    
+    # Define tools the agent can call
+    def custom_tool(param: str) -> str:
+        """Tool description for the agent."""
+        return f"Result: {param}"
+    
+    # Create agent with tools
+    agent = client.create_agent(
+        name="CustomAgent",
+        instructions=instructions,
+        tools=[custom_tool]
+    )
+    
+    return agent
+
+# Use the agent
+agent = await create_custom_agent()
+response = await client.run_chat(agent, "user message")
 ```
-## �🏗️ Architecture
 
-### Semantic Kernel Architecture (Recommended)
+### Benefits of Microsoft Agent Framework
 
-The solution follows a plugin-based architecture built on Semantic Kernel:
+- ✅ **Native Azure Integration**: Direct connection to Azure AI Foundry projects
+- ✅ **Tool Support**: Easy integration of Python functions as agent tools
+- ✅ **Managed Identity**: Secure authentication without storing credentials
+- ✅ **Async/Await**: Modern Python async support for concurrent operations
+- ✅ **Type Safety**: Full Python type hints and IDE autocompletion
+- ✅ **Scalable**: Containerized deployment to Azure Container Apps
+- ✅ **Cost Effective**: Pay only for model inference, not agent orchestration
+## 🏗️ Architecture
+
+### Multi-Agent Architecture
+
+The solution uses Microsoft Agent Framework with multi-agent orchestration:
 
 ```mermaid
 graph TB
     subgraph "User Interface Layer"
-        UI[🖥️ Chat Interface<br/>chat_sk.py]
+        UI[🖥️ Chat Interface<br/>chat.py / main.py]
     end
     
-    subgraph "AI Orchestration Layer"
-        SK[🧠 Semantic Kernel<br/>Framework]
-        CH[💭 Chat History<br/>Management]
-        AOI[🤖 Azure OpenAI<br/>GPT-4 Integration]
+    subgraph "Orchestration Layer"
+        ORCH[🎯 Keyword Orchestrator<br/>Routes to specialized agents]
+        LLM[🤖 LLM Orchestrator<br/>AI-based routing]
     end
     
-    subgraph "Plugin Layer"
-        GP[🐙 GitHub Plugin<br/>@kernel_function]
-        EP[🔍 Elasticsearch Plugin<br/>@kernel_function]
-        SP[🎫 ServiceNow Plugin<br/>@kernel_function]
+    subgraph "Agent Layer - Microsoft Agent Framework"
+        MATH[🔢 Math Agent<br/>Calculations & formulas]
+        GH[📦 GitHub Agent<br/>Repository operations]
     end
     
-    subgraph "Operations Layer"
-        GO[📂 GitHub Operations<br/>Repository Management]
-        EO[📊 Elasticsearch Operations<br/>Log Analysis]
-        SO[🔧 ServiceNow Operations<br/>Incident Management]
+    subgraph "Tools Layer"
+        MT[Math Tools<br/>add, subtract, multiply, divide]
+        GT[GitHub Tools<br/>repos, files, issues]
     end
     
-    subgraph "External Systems"
-        GH[🌐 GitHub API<br/>REST v4]
-        ES[⚡ Elasticsearch<br/>Search Engine]
-        SN[🏢 ServiceNow<br/>Table API]
+    subgraph "Azure AI Foundry"
+        PROJ[AI Project<br/>Project Endpoint]
+        MODEL[Model Deployment<br/>GPT-4.1 / GPT-4.1]
     end
     
-    %% User Interface Flow
-    UI --> SK
-    SK --> CH
-    SK --> AOI
+    UI --> ORCH
+    ORCH --> MATH
+    ORCH --> GH
+    MATH --> MT
+    GH --> GT
+    MATH -.connects via AzureAIClient.-> PROJ
+    GH -.connects via AzureAIClient.-> PROJ
+    PROJ --> MODEL
     
-    %% Plugin Registration
-    SK --> GP
-    SK --> EP
-    SK --> SP
-    
-    %% Plugin to Operations Flow
-    GP --> GO
-    EP --> EO
-    SP --> SO
-    
-    %% Operations to External Systems
-    GO --> GH
-    EO --> ES
-    SO --> SN
-    
-    %% Data Flow Styling
     classDef userLayer fill:#e1f5fe,stroke:#01579b,stroke-width:2px
-    classDef aiLayer fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
-    classDef pluginLayer fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
-    classDef opsLayer fill:#fff3e0,stroke:#e65100,stroke-width:2px
-    classDef extLayer fill:#ffebee,stroke:#b71c1c,stroke-width:2px
+    classDef orchLayer fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef agentLayer fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
+    classDef toolLayer fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef azureLayer fill:#ffebee,stroke:#b71c1c,stroke-width:2px
     
     class UI userLayer
-    class SK,CH,AOI aiLayer
-    class GP,EP,SP pluginLayer
-    class GO,EO,SO opsLayer
-    class GH,ES,SN extLayer
+    class ORCH,LLM orchLayer
+    class MATH,GH agentLayer
+    class MT,GT toolLayer
+    class PROJ,MODEL azureLayer
 ```
 
 ### Data Flow Architecture
@@ -366,70 +359,76 @@ graph TB
 sequenceDiagram
     participant U as 👤 User
     participant C as 🖥️ Chat Interface
-    participant K as 🧠 Semantic Kernel
-    participant P as 🔌 Plugin
-    participant O as ⚙️ Operations
-    participant A as 🌐 External API
+    participant O as 🎯 Orchestrator
+    participant M as 🔢 Math Agent
+    participant T as ⚙️ Math Tools
+    participant F as 🌐 Azure AI Foundry
     
-    U->>C: "Show me open incidents"
-    C->>K: Process user message
-    K->>K: Function selection<br/>(auto-routing)
-    K->>P: ServiceNow Plugin<br/>query_open_incidents()
-    P->>O: ServiceNow Operations<br/>query_incidents()
-    O->>A: REST API Call<br/>GET /table/incident
-    A->>O: JSON Response<br/>(incidents data)
-    O->>P: Formatted results<br/>(paging info)
-    P->>K: Plugin response<br/>(user-friendly text)
-    K->>C: AI-generated response<br/>(with context)
-    C->>U: "Open Incidents - Page 1<br/>(showing 1-20)..."
+    U->>C: "What is 15 times 23?"
+    C->>O: Process user message
+    O->>O: Detect keywords<br/>"times" → Math domain
+    O->>M: Route to Math Agent
+    M->>F: Send to GPT-4.1<br/>(with tool definitions)
+    F->>F: Agent decides to call<br/>multiply(15, 23)
+    F->>T: Execute multiply tool
+    T->>F: Return: 345
+    F->>M: AI response with result
+    M->>O: "15 times 23 equals 345"
+    O->>C: Format response
+    C->>U: "15 times 23 equals 345"
 ```
 
 ### Key Architectural Patterns
 
-**1. Plugin-Based Architecture (Semantic Kernel)**
-- Modular plugin system using `@kernel_function` decorators
-- Automatic function calling with FunctionChoiceBehavior
-- Native async/await support throughout
-- Simple, declarative function definitions
+**1. Multi-Agent Orchestration**
+- Keyword-based routing to specialized agents (keyword_orchestrator.py)
+- LLM-based intelligent routing (llm_orchestrator.py)
+- Each agent has domain-specific tools and instructions
+- Agents can be developed and tested independently
 
-**2. Operations Layer Abstraction**
-- Clean separation between plugin interfaces and business logic
-- Reusable operations classes for GitHub, Elasticsearch, and ServiceNow
-- Centralized error handling and connection management
+**2. Microsoft Agent Framework Integration**
+- All agents use `agent_framework.azure.AzureAIClient`
+- Connect to models in Azure AI Foundry projects
+- Managed identity authentication (no API keys in code)
+- Native tool calling support with Python functions
 
-**3. Conversation Management**
-- Built-in ChatHistory for context persistence
-- System message configuration for behavior control
-- Automatic tool invocation without manual routing
+**3. Azure AI Foundry Connection**
+- Project endpoint from `AZURE_PROJECT_ENDPOINT` environment variable
+- Model deployment name from `MODEL_DEPLOYMENT_NAME` (e.g., "gpt-4.1")
+- Centralized model management and monitoring
+- Cost tracking per project
 
 ## 🔧 Technical Stack
 
 ### Core Technologies
-- **Semantic Kernel**: Microsoft's AI orchestration framework (recommended)
-- **LangGraph**: State graph framework (legacy implementation)
-- **Azure OpenAI**: Large language model for natural language processing
-- **Python 3.12+**: Primary development language
+- **Microsoft Agent Framework**: SDK for building conversational AI agents
+- **Azure AI Foundry**: Cloud platform for AI project management and model hosting
+- **Python 3.12**: Modern async/await support and type hints
 
 ### Integrations
 - **GitHub API**: Repository browsing, file content access, issue creation
-- **Elasticsearch**: Log search and analysis with KQL support
-- **ServiceNow REST API**: Complete incident lifecycle management
-  - Table API for incident CRUD operations
-  - Advanced querying with encoded query strings
-  - Paging support for large datasets
-  - Field-level access control and validation
 - **PyGithub**: Python wrapper for GitHub API operations
-- **Elasticsearch-py**: Official Elasticsearch Python client
-- **Requests**: HTTP client for ServiceNow REST API integration
 
 ### Infrastructure
-- **Docker Compose**: Local development environment with PostgreSQL and Adminer
-- **Environment Configuration**: Secure credential management via environment variables
+- **Azure Container Apps**: Serverless container hosting with autoscaling
+- **Azure Container Registry**: Private Docker image storage
+- **Azure Log Analytics**: Centralized logging and monitoring
+- **Azure Application Insights**: Performance monitoring and diagnostics
+- **Docker**: Containerized application deployment
+- **GitHub Actions**: CI/CD pipelines for build, push, and deploy
 
 ## 🚀 Capabilities
 
+### Math Agent
+The Math Agent provides calculation capabilities:
+
+**Operations:**
+- Addition, subtraction, multiplication, division
+- Formula evaluation
+- Multi-step calculations
+
 ### GitHub Integration
-The assistant provides comprehensive GitHub repository management:
+The GitHub Agent provides repository management:
 
 **Repository Operations:**
 - List all repositories for a given user
@@ -863,7 +862,7 @@ Runs on every push and pull request:
 - 🛡️ Security scanning (safety, bandit)
 - 📊 Coverage reports uploaded to Codecov
 
-#### **2. Infrastructure Deployment** (`infra-deploy.yml`)
+#### **2. Infrastructure Deployment** (`deploy_infra.yml`)
 Deploy Azure infrastructure using Bicep:
 - 🏗️ **What it deploys:**
   - Azure Container Registry
@@ -879,12 +878,12 @@ Deploy Azure infrastructure using Bicep:
 **Usage:**
 ```bash
 # Via GitHub Actions (Recommended)
-# Actions → Infrastructure - Deploy to Azure → Run workflow
+# Actions → Deploy Infrastructure → Run workflow
 # Select: environment (dev/staging/production) and action (deploy/destroy)
 
 # Via Azure CLI
 az deployment group create \
-  --name infra-deploy \
+  --name infra-deployment \
   --resource-group ai-agent-starter-dev-rg \
   --template-file infra/main.bicep \
   --parameters @infra/dev.parameters.json
@@ -971,7 +970,7 @@ AZURE_CONTAINER_APP_NAME      # From infra outputs
 **Step 3: Deploy Application**
 ```bash
 # Automatic on push to main
-# Or manually trigger: Actions → CD - Deploy to Azure Container Apps
+# Or manually trigger: Actions → Deploy Application
 ```
 
 **Step 4: Verify Deployment**
