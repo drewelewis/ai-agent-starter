@@ -59,7 +59,9 @@ jobs:
           --resource-group $RESOURCE_GROUP \
           --template-file ${{ env.BICEP_FILE }} \
           --parameters environment=$ENVIRONMENT \
-          --parameters location=${{ env.AZURE_LOCATION }}
+          --parameters location=${{ env.AZURE_LOCATION }} \
+          --parameters azureProjectEndpoint="${{ secrets.AZURE_PROJECT_ENDPOINT }}" \
+          --parameters modelDeploymentName="${{ secrets.MODEL_DEPLOYMENT_NAME }}"
 
   deploy:
     name: Deploy Infrastructure
