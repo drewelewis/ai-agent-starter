@@ -38,6 +38,19 @@ SP_JSON=$(az ad sp create-for-rbac \
   --scopes "/subscriptions/$SUBSCRIPTION_ID" \
   --sdk-auth)
 
+# Parse JSON and extract values
+CLIENT_ID=$(echo "$SP_JSON" | grep -o '"clientId": "[^"]*' | cut -d'"' -f4)
+CLIENT_SECRET=$(echo "$SP_JSON" | grep -o '"clientSecret": "[^"]*' | cut -d'"' -f4)
+TENANT_ID=$(echo "$SP_JSON" | grep -o '"tenantId": "[^"]*' | cut -d'"' -f4)
+SUBSCRIPTION_ID=$(echo "$SP_JSON" | grep -o '"subscriptionId": "[^"]*' | cut -d'"' -f4)
+
+# Grant User Access Administrator role for role assignment creation
+echo -e "${CYAN}Adding User Access Administrator role...${NC}"
+az role assignment create \
+  --assignee "$CLIENT_ID" \
+  --role "User Access Administrator" \
+  --scope "/subscriptions/$SUBSCRIPTION_ID"
+
 # Display the service principal information
 echo -e "${GREEN}==================================================================${NC}"
 echo -e "${GREEN}GitHub Secrets - Service Principal${NC}"

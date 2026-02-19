@@ -239,6 +239,19 @@ $AZURE_CLIENT_ID = $SP_OBJ.appId
 $AZURE_CLIENT_SECRET = $SP_OBJ.password
 $AZURE_TENANT_ID = $SP_OBJ.tenant
 
+Write-Host "[->] Assigning 'User Access Administrator' role to service principal..." -ForegroundColor $YELLOW
+az role assignment create `
+    --assignee $AZURE_CLIENT_ID `
+    --role "User Access Administrator" `
+    --scope "/subscriptions/$AZURE_SUBSCRIPTION_ID" `
+    --only-show-errors | Out-Null
+
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "[OK] User Access Administrator role assigned successfully" -ForegroundColor $GREEN
+} else {
+    Write-Host "[WARNING] Failed to assign User Access Administrator role - you may need to do this manually" -ForegroundColor $YELLOW
+}
+
 Write-Host "    Client ID: $AZURE_CLIENT_ID" -ForegroundColor $GREEN
 
 # Register resource providers

@@ -23,6 +23,16 @@ $SP_JSON = az ad sp create-for-rbac `
   --scopes "/subscriptions/$SUBSCRIPTION_ID" `
   --sdk-auth
 
+# Parse the JSON to extract individual values
+$SP_OBJ = $SP_JSON | ConvertFrom-Json
+
+# Grant User Access Administrator role for role assignment creation
+Write-Host "Adding User Access Administrator role..." -ForegroundColor Cyan
+az role assignment create `
+  --assignee $SP_OBJ.clientId `
+  --role "User Access Administrator" `
+  --scope "/subscriptions/$SUBSCRIPTION_ID"
+
 # Display the service principal information
 Write-Host "`n==================================================================" -ForegroundColor Green
 Write-Host "GitHub Secrets - Service Principal" -ForegroundColor Green

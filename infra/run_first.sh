@@ -214,6 +214,20 @@ AZURE_TENANT_ID=$(echo "$SP_JSON" | jq -r '.tenant')
 
 echo -e "${GREEN}    Client ID: $AZURE_CLIENT_ID${NC}"
 
+# Grant User Access Administrator role for role assignment creation
+echo -e "${YELLOW}[->] Assigning 'User Access Administrator' role to service principal...${NC}"
+az role assignment create \
+    --assignee "$AZURE_CLIENT_ID" \
+    --role "User Access Administrator" \
+    --scope "/subscriptions/$AZURE_SUBSCRIPTION_ID" \
+    --only-show-errors >/dev/null 2>&1
+
+if [ $? -eq 0 ]; then
+    echo -e "${GREEN}[OK] User Access Administrator role assigned successfully${NC}"
+else
+    echo -e "${YELLOW}[WARNING] Failed to assign User Access Administrator role - you may need to do this manually${NC}"
+fi
+
 # Register resource providers
 echo -e "${YELLOW}[→] Registering Azure resource providers...${NC}"
 PROVIDERS=(
