@@ -160,8 +160,8 @@ class KeywordOrchestrator:
         
         # Get response from agent
         response_text = await agent.run(user_input)
-            
-            return response_text, agent_switch_info
+        
+        return response_text, agent_switch_info
     
     def get_agent_selection_help(self) -> str:
         """Provide help for selecting an agent"""
