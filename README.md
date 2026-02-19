@@ -952,9 +952,17 @@ graph LR
 **Step 2: Configure Secrets**
 ```bash
 # Add to GitHub repository secrets:
-AZURE_CREDENTIALS              # Service principal JSON
+# Service Principal
+AZURE_CLIENT_ID                # Service principal client ID
+AZURE_CLIENT_SECRET            # Service principal client secret
+AZURE_TENANT_ID                # Azure AD tenant ID
+AZURE_SUBSCRIPTION_ID          # Azure subscription ID
+
+# Azure AI Configuration
 AZURE_PROJECT_ENDPOINT         # Azure AI endpoint
 MODEL_DEPLOYMENT_NAME          # Model name (e.g., gpt-4)
+
+# From infrastructure deployment outputs
 AZURE_CONTAINER_REGISTRY       # From infra outputs
 AZURE_RESOURCE_GROUP          # From infra outputs
 AZURE_CONTAINER_APP_NAME      # From infra outputs

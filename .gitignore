@@ -173,3 +173,11 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Infrastructure setup credentials (never commit these!)
+infra/azure-credentials.json
+infra/sp-credentials.txt
+infra/setup-config.txt
+**/azure-credentials.json
+**/sp-credentials.txt
+**/setup-config.txt

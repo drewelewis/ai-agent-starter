@@ -227,7 +227,13 @@ graph TD
 
 ### For Infrastructure Deployment
 ```bash
-AZURE_CREDENTIALS              # Service principal JSON
+# Service Principal Authentication
+AZURE_CLIENT_ID                # Service principal client ID
+AZURE_CLIENT_SECRET            # Service principal client secret
+AZURE_TENANT_ID                # Azure AD tenant ID
+AZURE_SUBSCRIPTION_ID          # Azure subscription ID
+
+# Azure AI Configuration
 AZURE_PROJECT_ENDPOINT         # Azure AI/OpenAI endpoint
 MODEL_DEPLOYMENT_NAME          # Model deployment name (e.g., gpt-4)
 ```
@@ -246,7 +252,10 @@ AZURE_CONTAINER_APP_NAME      # Format: ai-agent-starter-{env}
 Repository → Settings → Secrets and variables → Actions → New repository secret
 
 # Via GitHub CLI
-gh secret set AZURE_CREDENTIALS < azure-creds.json
+gh secret set AZURE_CLIENT_ID --body "your-client-id"
+gh secret set AZURE_CLIENT_SECRET --body "your-client-secret"
+gh secret set AZURE_TENANT_ID --body "your-tenant-id"
+gh secret set AZURE_SUBSCRIPTION_ID --body "your-subscription-id"
 gh secret set AZURE_PROJECT_ENDPOINT --body "https://your-endpoint.openai.azure.com"
 gh secret set MODEL_DEPLOYMENT_NAME --body "gpt-4"
 ```
