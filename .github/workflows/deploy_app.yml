@@ -27,14 +27,39 @@ jobs:
           --tenant ${{ secrets.AZURE_TENANT_ID }}
         az account set --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+    - name: Build Docker image
+      run: |
+        docker build -t ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} .
+
+    - name: Test Docker image locally
+      run: |
+        echo "Testing Docker image before pushing to registry..."
+        docker run -d --name test-container -p 8989:8989 \
+          -e AZURE_PROJECT_ENDPOINT="test" \
+          -e MODEL_DEPLOYMENT_NAME="test" \
+          ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        
+        sleep 10
+        
+        if docker exec test-container curl -f http://localhost:8989/health; then
+          echo "✅ Local Docker health check passed"
+        else
+          echo "❌ Local Docker health check failed"
+          docker logs test-container
+          exit 1
+        fi
+        
+        docker stop test-container
+        docker rm test-container
+
     - name: Log in to Azure Container Registry
       run: |
         az acr login --name ${{ secrets.AZURE_CONTAINER_REGISTRY }}
 
-    - name: Build and push Docker image
+    - name: Tag and push Docker image
       run: |
-        docker build -t ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} .
-        docker build -t ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io/${{ env.IMAGE_NAME }}:latest .
+        docker tag ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+          ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
         docker push ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
         docker push ${{ secrets.AZURE_CONTAINER_REGISTRY }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
 
@@ -65,11 +90,48 @@ jobs:
 
     - name: Check deployment health
       run: |
-        sleep 30
         HEALTH_URL="${{ steps.get-url.outputs.url }}/health"
-        echo "Checking health at: $HEALTH_URL"
-        curl -f $HEALTH_URL || exit 1
-        echo "✅ Deployment healthy!"
+        MAX_RETRIES=10
+        RETRY_COUNT=0
+        
+        echo "Starting health check at: $HEALTH_URL"
+        
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+          echo "Health check attempt $((RETRY_COUNT + 1))/$MAX_RETRIES..."
+          
+          if curl -f -s "$HEALTH_URL" > /dev/null 2>&1; then
+            echo "✅ Health check passed!"
+            exit 0
+          fi
+          
+          RETRY_COUNT=$((RETRY_COUNT + 1))
+          SLEEP_TIME=$((RETRY_COUNT * 5))
+          
+          if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+            echo "Waiting ${SLEEP_TIME}s before retry..."
+            sleep $SLEEP_TIME
+          fi
+        done
+        
+        echo "❌ Health check failed after $MAX_RETRIES attempts"
+        exit 1
+
+    - name: Output deployment details
+      run: |
+        APP_URL="${{ steps.get-url.outputs.url }}"
+        PORTAL_URL="https://portal.azure.com/#@/resource/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ secrets.AZURE_RESOURCE_GROUP }}/overview"
+        
+        echo "## 🚀 Deployment Complete" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Application URL:** $APP_URL" >> $GITHUB_STEP_SUMMARY
+        echo "**Health Endpoint:** $APP_URL/health" >> $GITHUB_STEP_SUMMARY
+        echo "**API Docs:** $APP_URL/docs" >> $GITHUB_STEP_SUMMARY
+        echo "**Azure Portal:** [View Resource Group]($PORTAL_URL)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Quick Links" >> $GITHUB_STEP_SUMMARY
+        echo "- [Container App Logs]($PORTAL_URL)" >> $GITHUB_STEP_SUMMARY
+        echo "- [Application Insights]($PORTAL_URL)" >> $GITHUB_STEP_SUMMARY
+        echo "- [Container Registry]($PORTAL_URL)" >> $GITHUB_STEP_SUMMARY
 
     - name: Run smoke tests
       run: |
@@ -84,6 +146,7 @@ jobs:
         echo "✅ All smoke tests passed!"
 
     - name: Comment on commit
+      continue-on-error: true
       uses: actions/github-script@v7
       with:
         script: |
@@ -135,6 +198,7 @@ jobs:
         echo "⏮️ Rolled back to revision: ${{ steps.previous.outputs.revision }}"
 
     - name: Notify rollback
+      continue-on-error: true
       uses: actions/github-script@v7
       with:
         script: |
