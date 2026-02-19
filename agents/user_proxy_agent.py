@@ -140,30 +140,23 @@ class UserProxyAgent:
     
     async def _stream_with_formatting(self, processed_input: str) -> AsyncGenerator[str, None]:
         """Stream response with formatting applied"""
-        response_parts = []
-        agent_info = None
+        # Note: Current agent implementation doesn't support streaming,
+        # so we get the full response and yield it in chunks
+        response, agent_info = await self.orchestrator.route_query(processed_input, stream=False)
         
-        # Get streaming response from orchestrator
-        generator = await self.orchestrator.route_query(processed_input, stream=True)
+        if self.debug and agent_info:
+            print(f"[DEBUG] Orchestrator routed to: {agent_info}")
         
-        async for chunk in generator:
-            if chunk == (None, agent_info):
-                # Final tuple with agent info
-                continue
-            if isinstance(chunk, tuple):
-                _, agent_info = chunk
-            elif chunk:
-                response_parts.append(chunk)
-                yield chunk
+        # Yield the response (could chunk it here if needed)
+        yield response
         
         # Add suggestions at the end
-        full_response = "".join(response_parts)
-        suggestions = self._get_follow_up_suggestions(full_response, agent_info)
+        suggestions = self._get_follow_up_suggestions(response, agent_info)
         if suggestions:
             yield f"\n\n{suggestions}"
         
         # Add to history
-        self._add_to_history("assistant", full_response)
+        self._add_to_history("assistant", response)
     
     def _needs_clarification(self, user_input: str) -> Optional[Dict[str, Any]]:
         """

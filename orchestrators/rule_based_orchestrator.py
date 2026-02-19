@@ -206,11 +206,10 @@ class RuleBasedOrchestrator:
         
         Args:
             user_input: The user's message
-            stream: Whether to return a streaming response (async generator)
+            stream: Whether to return a streaming response (not currently supported)
             
         Returns:
-            If stream=False: Tuple of (response_text, agent_switch_info)
-            If stream=True: Async generator yielding chunks and final (None, agent_switch_info)
+            Tuple of (response_text, agent_switch_info)
         """
         # Ensure initialization
         if not self._initialized:
@@ -222,13 +221,7 @@ class RuleBasedOrchestrator:
         if not selected_agent_name:
             # No rule matched - return help info
             help_response = self.get_agent_selection_help()
-            if stream:
-                async def help_generator():
-                    yield help_response
-                    yield (None, None)
-                return help_generator()
-            else:
-                return help_response, None
+            return help_response, None
         
         # Check if we switched agents
         agent_switch_info = None
@@ -236,53 +229,13 @@ class RuleBasedOrchestrator:
             self.current_agent_name = selected_agent_name
             agent_switch_info = f"🤖 Rule-based routing to: {selected_agent_name.title()} Agent"
         
-        # Get agent and thread
+        # Get agent
         agent = self.agents[selected_agent_name]
-        thread = self.threads[selected_agent_name]
         
-        if stream:
-            # Return streaming generator
-            async def response_generator():
-                tool_calls_made = []
-                async for chunk in agent.run_stream(user_input, thread=thread):
-                    # Track tool calls
-                    if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
-                        for tool_call in chunk.tool_calls:
-                            tool_name = tool_call.function.name if hasattr(tool_call.function, 'name') else str(tool_call)
-                            if tool_name not in tool_calls_made:
-                                tool_calls_made.append(tool_name)
-                                yield f"\n🔧 Calling tool: {tool_name}\n"
-                    
-                    if chunk.text:
-                        yield chunk.text
-                
-                # Final yield with switch info and tool summary
-                if tool_calls_made:
-                    tool_summary = f"\n\n📋 Tools used: {', '.join(tool_calls_made)}"
-                    yield tool_summary
-                yield (None, agent_switch_info)
-            return response_generator()
-        else:
-            # Collect full response and track tools
-            response_text = ""
-            tool_calls_made = []
-            async for chunk in agent.run_stream(user_input, thread=thread):
-                # Track tool calls
-                if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
-                    for tool_call in chunk.tool_calls:
-                        tool_name = tool_call.function.name if hasattr(tool_call.function, 'name') else str(tool_call)
-                        if tool_name not in tool_calls_made:
-                            tool_calls_made.append(tool_name)
-                            print(f"\n🔧 Calling tool: {tool_name}", flush=True)
-                
-                if chunk.text:
-                    response_text += chunk.text
-            
-            # Add tool summary to response
-            if tool_calls_made:
-                response_text += f"\n\n📋 Tools used: {', '.join(tool_calls_made)}"
-            
-            return response_text, agent_switch_info
+        # Get response from agent
+        response_text = await agent.run(user_input)
+        
+        return response_text, agent_switch_info
     
     def get_agent_selection_help(self) -> str:
         """Provide help for selecting an agent"""
