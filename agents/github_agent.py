@@ -70,7 +70,7 @@ Always think step by step when analyzing repositories and provide clear, actiona
     
     # Create local agent with tools
     agent = ChatAgent(
-        client=client,
+        chat_client=client,
         name="GitHubAgent",
         instructions=instructions,
         tools=[
@@ -91,7 +91,7 @@ async def main():
     """
     print("\n" + "="*60)
     print("GitHub Assistant Agent - Microsoft Agent Framework")
- print("="*60 + "\n")
+    print("="*60 + "\n")
     
     # Get configuration from environment
     project_endpoint = os.getenv('AZURE_PROJECT_ENDPOINT')

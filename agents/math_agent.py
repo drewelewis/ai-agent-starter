@@ -71,7 +71,7 @@ Always provide helpful, accurate mathematical results."""
     
     # Create local agent with math tools
     agent = ChatAgent(
-        client=client,
+        chat_client=client,
         name=AGENT_NAME,
         instructions=instructions,
         tools=[
