@@ -47,36 +47,22 @@ graph TD
 
 ## �🆕 Two Implementation Options
 
-### 1. **Semantic Kernel (Recommended) - NEW!** ✨
+### 1. **Semantic Kernel (Recommended) - NOW RETIRED** ✨
 
-The modern implementation using Microsoft's Semantic Kernel framework.
-
-**Benefits:**
-- Simpler, more maintainable code
-- Native Azure OpenAI integration
-- Built-in async support
-- Automatic function calling
-- Easier plugin development
+This implementation has been replaced with Microsoft Agent Framework.
 
 **Run with:**
 ```bash
-python chat_sk.py
+python chat.py  # Updated to use Microsoft Agent Framework
 ```
 
-**Learn more:** See [SEMANTIC_KERNEL_MIGRATION.md](SEMANTIC_KERNEL_MIGRATION.md)
+### 2. **LangGraph (Legacy) - REMOVED**
 
-### 2. **LangGraph (Legacy)**
+The original LangGraph implementation has been replaced with Microsoft Agent Framework.
 
-The original implementation using LangGraph's state management system.
+## 🎛️ Orchestration Strategies
 
-**Run with:**
-```bash
-python chat.py
-```
-
-## �️ Orchestration Strategies
-
-The Semantic Kernel implementation supports three different agent orchestration strategies for intelligent routing:
+Microsoft Agent Framework supports three different orchestration strategies for intelligent routing:
 
 ### 1. **KeywordOrchestrator** - Simple & Fast 🚀
 
@@ -524,28 +510,32 @@ Comprehensive internal IT support with ServiceNow incident management system:
 ## 📁 Project Structure
 
 ```
-ai-prod-support-assistant/
-├── chat_sk.py                  # Semantic Kernel chat implementation (NEW - RECOMMENDED)
-├── chat.py                     # LangGraph chat implementation (LEGACY)
-├── messages.py                 # Message handling utilities
+ai-agent-starter/
+├── chat.py                     # Interactive chat with orchestrator selection
+├── chat_with_proxy.py          # Chat with user proxy pattern
+├── main.py                     # Simple agent runner
 ├── requirements.txt            # Python dependencies
-├── docker-compose.yaml         # Infrastructure setup (PostgreSQL, Adminer)
+├── docker-compose.yaml         # Infrastructure setup
 ├── env.sample                  # Environment variable template
-├── plugins/                    # Semantic Kernel plugins (NEW)
-│   ├── __init__.py             # Plugin exports
-│   ├── github_plugin.py        # GitHub operations plugin
-│   ├── elasticsearch_plugin.py # Elasticsearch search plugin
-│   └── servicenow_plugin.py    # ServiceNow incident management plugin
-├── tools/                      # LangChain tool implementations (LEGACY)
-│   ├── github_tools.py         # GitHub API tool wrappers
-│   ├── elastic_search_tools.py # Elasticsearch tool wrappers
-│   └── servicenow_tools.py     # ServiceNow tool wrappers
-├── operations/                 # Business logic layer (SHARED)
+├── agents/                     # Microsoft Agent Framework agents
+│   ├── __init__.py             # Agent exports
+│   ├── github_agent.py         # GitHub repository agent
+│   ├── math_agent.py           # Math calculation agent
+│   └── user_proxy_agent.py     # User proxy orchestrator
+├── tools/                      # Agent tool implementations
+│   ├── github_tool.py          # GitHub API tool functions
+│   └── math_tool.py            # Math operation tool functions
+├── orchestrators/              # Agent routing strategies
+│   ├── keyword_orchestrator.py # Keyword-based routing
+│   ├── llm_orchestrator.py     # LLM-powered routing
+│   └── rule_based_orchestrator.py # Rule-based routing
+├── operations/                 # Business logic layer
 │   ├── github_operations.py    # GitHub API operations
-│   ├── elastic_search_operations.py # Elasticsearch operations
-│   └── servicenow_operations.py # ServiceNow operations
-├── utils/                      # Utility functions
-│   └── graph_utils.py          # Graph visualization utilities
+│   └── math_operations.py      # Math computation operations
+├── models/                     # Pydantic data models
+│   └── chat_models.py          # Chat request/response models
+├── api/                        # FastAPI REST API
+│   └── main.py                 # API server endpoints
 ├── tests/                      # Test suite
 │   ├── test_github.py          # GitHub integration tests
 │   ├── test_elastic.py         # Elasticsearch integration tests
@@ -673,14 +663,22 @@ SERVICENOW_API_TOKEN=your_api_token
 
 5. **Run the assistant:**
    
-   **Option A: Semantic Kernel (Recommended)**
-   ```bash
-   python chat_sk.py
-   ```
-   
-   **Option B: LangGraph (Legacy)**
+   **Interactive Chat:**
    ```bash
    python chat.py
+   # Choose orchestrator: keyword (fast), LLM (smart), or rule-based (business logic)
+   ```
+   
+   **With User Proxy:**
+   ```bash
+   python chat_with_proxy.py
+   # Enhanced UX with context management and suggestions
+   ```
+   
+   **Simple Agent Runner:**
+   ```bash
+   python main.py
+   # Direct interaction with a single agent
    ```
 
 ## 📖 Usage Examples
